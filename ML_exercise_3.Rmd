@@ -1,0 +1,352 @@
+---
+title: "ML exercise 3"
+author: "Tuukka Lukkari"
+date: "2024-04-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls());    # Clears all objects
+cat("\014");      # Clears the console screen
+dev.off()   # Clears the Plots window
+```
+
+
+## Theoretical Questions
+
+1.
+
+a) The main difference between supervised and unsupervised learning models is that unsupervised models do not have an Y variable which we can use to validate the results. The goal in unsupervised models is to form an understanding of correlations between observations rather than predicting. In this way, unsupervised models are of exploratory nature. Unsupervised methods can however, be used in supervised methods as features like principal component scores Z or function as a tool in dimension reduction. In addition, the interpretability of unsupervised models is difficult because we only get to know the outcome, for instance the clusters, but not clear steps of the clustering process.
+
+b) The main difference between k-means and hierarchical clustering is the algorithm it uses to cluster the observations, as well as the predefinition of the number of clusters. K-means clustering requires a predefined number of clusters to be made, whereas hierarchical clustering decides the clusters by itself and returns a dendogram. The algorithm in hierarchical calculates the dissimilarities and the fuses the observations with least dissimilarities, while clustering is based on shortest distance to cluster centroids.
+
+c) Population risk assessment in epidemiology. Classifying groups that are likely to intermingle.
+
+
+## Principal Component Analysis (PCA): Part 1: Data modification
+
+```{r PCA, echo=TRUE}
+setwd("C:/Users/tuukk/OneDrive - Hanken Svenska handelshogskolan/Masters Finance/Machine Learning")
+
+library(haven)
+Data = read_dta("Data_2024_PCA.dta")
+#View(Data)
+
+Data <- na.omit(Data) # Remove null values
+dim(Data)
+
+Train = subset(Data, year == 2019)
+dim(Train)
+Test = subset(Data, year == 2020)
+dim(Test)
+View(Train)
+
+library(tibble)
+Train = column_to_rownames(Train, 'gvkey')
+Test = column_to_rownames(Test, 'gvkey')
+#View(Train)
+#View(Test)
+
+
+# Removing non-needed variables
+Train = subset(Train, select = -year)
+Test = subset(Test, select = -year)
+#View(Train)
+#View(Test)
+dim(Train)
+dim(Test)
+
+Train2 = subset(Train, select = -trt1m) # Removing the dependent variable from the train set
+dim(Train)
+```
+
+
+## 2.Principal Component Analysis (PCA): Part 2: PCA
+
+```{r PCA2, echo=TRUE}
+library(stats)
+pr.train = prcomp(Train2, scale = TRUE) # PCA function with built-in scaling
+names(pr.train) # Center = means, scale = standard deviations that were used for scaling
+summary(pr.train)
+# 2 b)
+# Loadings
+pr.train$rotation
+# niq_m3    -0.4991955762 seems to be the heaviest (the most important variable is the one whos absolute value of the loading is the largest)
+# niq_m2
+# niq_m1
+# niq_m4
+
+# c) Plotting
+dim(pr.train$x)
+#pr.train$x
+biplot(pr.train, scale = 0) # scale = 0 means that the arrows are scaled to represent the loadings
+
+# d) PVEs
+pve = pr.train$sdev^2 / sum(pr.train$sdev^2)
+pve[1:6]
+cumsum(pve)
+cumsum(pve)[6]
+
+# e)
+par(mfrow = c(1, 2))
+plot(pve, xlab = 'Principal Component', ylab = 'Proportion of Variance Explained', ylim = c(0, 1), type = 'b')
+plot(cumsum(pve), xlab = 'Principal Component', ylab = 'Cumulative Proportion of Variance Explained', ylim = c(0, 1), type = 'b')
+# The fist PC explains the most of the variance
+
+
+# f) 
+# The proportion of variance explained starts to decrease way less after PC1. Thus the "elbow" is at PC2. The important PCs appear before the elbow or the flattening of the curve and that is only PC1. PC2 does not explain the variance much more than PC3.
+
+
+```
+
+
+
+## 3. Principal Component Regression (PCR)
+
+```{r PCR, echo=TRUE}
+set.seed(1)
+
+
+# a)
+lm.fit <- lm(trt1m ~ 1, data = Train) # Using one to just have the intercept (look at the lm.fit list, with 1 it has one coefficient and it says intercept)
+
+intercept.testMSE <- mean((Test$trt1m - predict(lm.fit, newdata = Test))^2)
+intercept.testMSE
+
+# b)
+# OLS estimation
+lm.fit.OLS <- lm(trt1m ~ ., data = Train) # Using all variables except "year"
+
+OLS.testMSE <- mean((Test$trt1m - predict(lm.fit.OLS, Test))^2)
+OLS.testMSE
+
+
+# c) Lasso with k-folds CV
+library(glmnet)
+set.seed(1)
+# Defining training x and y and test x and y
+x <- model.matrix(trt1m ~ ., Train)[, -1] #[, -1] indicates that we want to exclude the first column
+y <- Train$trt1m
+x2 <- model.matrix(trt1m ~ ., Test)[, -1] # x on the test set
+y2 <- Test$trt1m # y on the test set
+
+grid <- 10^seq(from = 10, to = -2, length = 100) # defining the lambda as 10^10 to 10^(-2)
+
+lasso.out <- glmnet(x, y, alpha = 1, lambda = grid)
+plot(lasso.out, xvar = 'lambda')
+# Use the 10-fold cross-validation on the training set to find the tuning parameter that yields the model with the lowest MSE
+# Function cv.out performs cross-validation 
+set.seed(1)
+cv.Lasso <- cv.glmnet(x = x, y = y, alpha = 1, lambda = grid, nfolds = 10) 
+plot(cv.Lasso)
+
+bestlam.Lasso <- cv.Lasso$lambda.min 
+bestlam.Lasso
+
+
+  # Performing prediction 
+lasso.pred <- predict(lasso.out, s = bestlam.Lasso, newx = x2) #x2 is the test set
+lasso.testMSE <- mean((lasso.pred - y2)^2)
+lasso.testMSE
+
+#d)
+# Lasso with LOOCV
+cv.LOOCV <- cv.glmnet(x = x, y = y, alpha = 1, lambda = grid, nfolds = dim(Train)[1]) 
+plot(cv.LOOCV)
+
+bestlam.LOOCV <- cv.LOOCV$lambda.min 
+bestlam.LOOCV
+
+
+  # Performing prediction 
+LOOCV.pred <- predict(lasso.out, s = bestlam.LOOCV, newx = x2) #x2 is the test set
+LOOCV.testMSE <- mean((LOOCV.pred - y2)^2)
+LOOCV.testMSE
+
+# e) Ridge with k-folds CV
+set.seed(1)
+out2 <- glmnet(x, y, alpha = 0)
+set.seed(1)
+# Function cv.out performs cross-validation 
+cv.ridge <- cv.glmnet(x = x, y = y, alpha = 0, nfolds = 10) 
+plot(cv.ridge)
+
+bestlam.ridge <- cv.ridge$lambda.min
+bestlam.ridge
+
+# Performing prediction 
+ridge.pred <- predict(out2, s = bestlam.ridge, newx = x2) #x2 is the test set
+ridge.testMSE <- mean((ridge.pred - y2)^2)
+ridge.testMSE
+
+#f) Ridge with LOOCV
+# LOOCV
+cv.LOOCV2 <- cv.glmnet(x = x, y = y, alpha = 0, nfolds = dim(Train)[1]) 
+plot(cv.LOOCV2)
+
+bestlam.LOOCV2 <- cv.LOOCV2$lambda.min
+bestlam.LOOCV2
+
+
+  # Performing prediction 
+LOOCV2.pred <- predict(out2, s = bestlam.LOOCV2, newx = x2) #x2 is the test set
+LOOCV2.testMSE <- mean((LOOCV2.pred - y2)^2) #y2 is the dependent variable for the test set
+LOOCV2.testMSE
+
+
+# g) PCR with k-fold CV
+library(pls)
+set.seed(1)
+pcr.fit <- pcr(trt1m ~ ., data = Train, scale = TRUE,validation = "CV") #scale = TRUE standardizes each predictor to generate principal components, validation="CV" causes the function to compute the 10-fold cross-validation error for each possible value of M (the number of principal components used)
+summary(pcr.fit)
+
+validationplot(pcr.fit, val.type = "RMSEP")
+
+# Elbow = where the validation MSE is lowest --> number of components = 8
+
+# Performing prediction 
+set.seed(1)
+CV3.pred <- predict(pcr.fit, ncomp = 8, newdata = x2) #x2 is the test set
+CV3.testMSE <- mean((CV3.pred - y2)^2) #y2 is the dependent variable for the test set
+CV3.testMSE
+
+#h) PCR with LOOCV
+set.seed(1)
+pcr.fit.LOOCV <- pcr(trt1m ~ ., data = Train, scale = TRUE,validation = "LOO")
+summary(pcr.fit.LOOCV)
+
+validationplot(pcr.fit.LOOCV, val.type = "RMSEP")
+# Performing prediction 
+hLOOCV.pred <- predict(pcr.fit.LOOCV, ncomp = 8, newdata = x2) #x2 is the test set
+hLOOCV.testMSE <- mean((hLOOCV.pred - y2)^2) #y2 is the dependent variable for the test set
+hLOOCV.testMSE
+
+
+# i) Comparison
+intercept.testMSE #a, OLSintercept
+OLS.testMSE #b, OLSallvariables
+lasso.testMSE #c, lasso with k-fold
+LOOCV.testMSE # d, lasso with LOOCV
+ridge.testMSE # e, ridge with k-fold
+LOOCV2.testMSE # f, ridge with LOOCV
+CV3.testMSE # g, PCR with k-fold
+hLOOCV.testMSE # h, PCR with LOOCV
+
+```
+Conclusion:
+We notice that for PCR, the method for selecting lambda does not matter for this data set. Both methods yield the exact same value for lambda and thus yield the same test MSE. 
+
+OLS estimation with all features performs poorly compared to the other methods which indicate that it is better to select a subset of features rather than regressing them all.
+
+Once again, the intercept model is clearly the best-performing model out of all variable selection models.
+
+
+
+
+
+
+
+
+## 4. Cluster Analysis: K-means clustering
+
+```{r kmeans, echo=TRUE}
+
+Train3 = subset(Train, select = c(1,2))
+Train3
+
+#a)
+set.seed(1)
+# K-means clustering with K = 4
+km.out = kmeans(Train3, 4, nstart = 1) #nstart = number of random sets that should be chosen
+#km.out
+
+par(mfrow = c(1, 2))
+plot(Train3, col = (km.out$cluster), main = 'K-means clustering results with K = 4', xlab = "", ylab = "", pch = 20, cex = 2)
+
+#b)
+set.seed(1)
+# Trying with 1000 random assignments
+km.out2 = kmeans(Train3, 4, nstart = 1000) #nstart = number of random sets that should be chosen
+#km.out2
+
+par(mfrow = c(1, 2))
+plot(Train3, col = (km.out2$cluster), main = 'K-means clustering results with K = 4', xlab = "", ylab = "", pch = 20, cex = 2)
+
+
+#c)
+km.out$tot.withinss
+km.out2$tot.withinss
+# These do not differ, and that could be a result of the optimal clustering being found in the first iteration.
+
+
+#d)
+set.seed(1)
+km.out3 = kmeans(Train3, 10, nstart = 1000)
+#km.out3
+par(mfrow = c(1, 2))
+plot(Train3, col = (km.out3$cluster), main = 'K-means clustering results with K = 10', xlab = "", ylab = "", pch = 20, cex = 2)
+
+
+```
+By observing the plot, we can distinguish clusters at the RHS and LHS as well as clusters in the middle.
+
+
+
+
+
+
+
+
+## 5. Cluster Analysis: Hierarchiacal Clustering
+
+```{r kmeans, echo=TRUE}
+
+rm(list=ls());    # Clears all objects
+cat("\014");      # Clears the console screen
+
+
+
+setwd("C:/Users/tuukk/OneDrive - Hanken Svenska handelshogskolan/Masters Finance/Machine Learning")
+set.seed(1)
+library(haven)
+df = read_dta("Data_2024_hier.dta")
+df1 = read_dta("Data_2024_hier.dta")
+countries = unlist(df1[, 1])
+# df = df[, -1] drop categorical variable if needed
+
+df$country = as.numeric(factor(df$country)) # Transforming the country to integers
+
+
+#Euclidean distance is used as dissimilarity
+hc.complete = hclust(dist(df), method = 'complete') # dist() is used to compute the inter-observation Euclidean distance matrix
+plot(hc.complete, xlab = "", sub = "", ylab = "", main = "Complete Linkage", labels = countries)
+abline(h = 10, col = 'red')
+hc.clusters = cutree(hc.complete, h = 10)
+table(hc.clusters, countries) # 14 clusters
+
+
+hc.average = hclust(dist(df), method = 'average') 
+plot(hclust(dist(df), method = "average"),labels = countries, main = "Average Linkage",xlab = "", sub = "", ylab = "")
+abline(h = 7, col = 'red')
+hc.clusters2 = cutree(hc.average, h = 7)
+table(hc.clusters2, countries) # 16 clusters
+
+
+hc.single = hclust(dist(df), method = 'single') 
+plot(hclust(dist(df), method = "single"),labels = countries, main = "Single Linkage",xlab = "", sub = "", ylab = "")
+abline(h = 2, col = 'red')
+hc.clusters3 = cutree(hc.single, h = 2)
+table(hc.clusters3, countries) # 19 clusters
+
+
+sc_df <- scale(df) #scaling
+hc.complete2 = hclust(dist(sc_df), method = 'complete') # dist() is used to compute the inter-observation Euclidean distance matrix
+plot(hc.complete2, xlab = "", sub = "", ylab = "", main = "Complete Linkage", labels = countries)
+abline(h = 1, col = 'red')
+hc.clusters4 = cutree(hc.complete2, h = 1)
+table(hc.clusters4, countries) # 14 clusters, the same as with h = 10 and unscaled values
+
+# e) Patterns: We notice that TUR, MAC, PRT are grouped similarly with each type of linkage. The same happens with ARG. This may happen because this group is most dissimilar from the rest of the sample. These 3 have the highest mean ESG score.
+```
