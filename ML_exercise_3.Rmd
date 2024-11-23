@@ -13,21 +13,11 @@ dev.off()   # Clears the Plots window
 ```
 
 
-## Theoretical Questions
-
-1.
-
-a) The main difference between supervised and unsupervised learning models is that unsupervised models do not have an Y variable which we can use to validate the results. The goal in unsupervised models is to form an understanding of correlations between observations rather than predicting. In this way, unsupervised models are of exploratory nature. Unsupervised methods can however, be used in supervised methods as features like principal component scores Z or function as a tool in dimension reduction. In addition, the interpretability of unsupervised models is difficult because we only get to know the outcome, for instance the clusters, but not clear steps of the clustering process.
-
-b) The main difference between k-means and hierarchical clustering is the algorithm it uses to cluster the observations, as well as the predefinition of the number of clusters. K-means clustering requires a predefined number of clusters to be made, whereas hierarchical clustering decides the clusters by itself and returns a dendogram. The algorithm in hierarchical calculates the dissimilarities and the fuses the observations with least dissimilarities, while clustering is based on shortest distance to cluster centroids.
-
-c) Population risk assessment in epidemiology. Classifying groups that are likely to intermingle.
-
 
 ## Principal Component Analysis (PCA): Part 1: Data modification
 
 ```{r PCA, echo=TRUE}
-setwd("C:/Users/tuukk/OneDrive - Hanken Svenska handelshogskolan/Masters Finance/Machine Learning")
+
 
 library(haven)
 Data = read_dta("Data_2024_PCA.dta")
@@ -307,8 +297,6 @@ rm(list=ls());    # Clears all objects
 cat("\014");      # Clears the console screen
 
 
-
-setwd("C:/Users/tuukk/OneDrive - Hanken Svenska handelshogskolan/Masters Finance/Machine Learning")
 set.seed(1)
 library(haven)
 df = read_dta("Data_2024_hier.dta")
